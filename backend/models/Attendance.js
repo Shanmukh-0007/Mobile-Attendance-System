@@ -22,6 +22,7 @@ const AttendanceSchema = new mongoose.Schema({
   attended: {
     type: Boolean,
     default: false,
+    required:true,
   },
   time: {
     // Include time to store when attendance was marked

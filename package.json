@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@react-native-community/geolocation": "^3.4.0",
+    "googleapis": "^144.0.0",
+    "mongoose": "^8.8.0",
+    "xlsx": "^0.18.5"
+  }
+}

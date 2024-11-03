@@ -22,4 +22,16 @@ const authorizeAdmin = (req, res, next) => {
   next();
 };
 
-module.exports = { authenticateToken, authorizeAdmin };
+const authenticateTokens = (req, res, next) => {
+  const token = req.headers['authorization'];
+  if (!token) return res.sendStatus(401); // Unauthorized
+
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, user) => {
+    if (err) return res.sendStatus(403); // Forbidden
+    req.user = user; // Save user info to request
+    next();
+  });
+};
+
+
+module.exports = { authenticateToken, authorizeAdmin, authenticateTokens };
