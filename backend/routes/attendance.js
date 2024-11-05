@@ -5,19 +5,27 @@ const {
   getAttendanceReport,
 } = require('../controllers/attendance');
 const router = express.Router();
-const { authenticateToken } = require('../middleware/authMiddleware');
-const { authenticateTokens } = require('../middleware/authMiddleware');
+const {
+  authenticateToken,
+  authorizeAdmin,
+} = require('../middleware/authMiddleware');
 const { check, validationResult } = require('express-validator');
 
-// Route for marking attendance
+// Route for marking attendance (accessible by any authenticated user)
 router.post(
   '/mark',
   authenticateToken,
   [
     check('studentId', 'Student ID is required').notEmpty(),
     check('classId', 'Class ID is required').notEmpty(),
-    check('location.latitude', 'Latitude is required and must be a float').isFloat(),
-    check('location.longitude', 'Longitude is required and must be a float').isFloat(),
+    check(
+      'location.latitude',
+      'Latitude is required and must be a float'
+    ).isFloat(),
+    check(
+      'location.longitude',
+      'Longitude is required and must be a float'
+    ).isFloat(),
   ],
   async (req, res) => {
     // Validate request fields
@@ -31,14 +39,10 @@ router.post(
   }
 );
 
-// Route for getting attendance records for a specific student
-router.get('/:studentId', authenticateToken, getAttendanceRecords);
+// Route for getting attendance records for a specific student (accessible by any authenticated user)
+router.get('/records/:studentId', authenticateToken, getAttendanceRecords);
 
-// Route to get attendance report
-router.get('/attendance/report', authenticateTokens, getAttendanceReport);
-
-// Route to generate and download the attendance report in Excel
-// router.get('/attendance/excel-report', authenticateTokens, generateAttendanceExcelReport);
-
+// Route to get general attendance report (admin-only access)
+router.get('/report', authenticateToken, authorizeAdmin, getAttendanceReport);
 
 module.exports = router;
