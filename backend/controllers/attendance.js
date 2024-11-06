@@ -1,15 +1,15 @@
 const Student = require('../models/Student');
 const Class = require('../models/Class');
 const Attendance = require('../models/Attendance');
-// const XLSX = require('xlsx');
+const createExcelFile = require('../utils/excelHelper');
+const fs = require('fs');
 
-// Constants for college geolocation
-const COLLEGE_LATITUDE = 17.196194148753055; // Replace with actual college latitude
-const COLLEGE_LONGITUDE = 78.59723549286544; // Replace with actual college longitude
-const RADIUS_METERS = 1000000; // Radius in meters for acceptable distance from college
+const COLLEGE_LATITUDE = 17.196668653873335;
+const COLLEGE_LONGITUDE = 78.5981835909269;
+const RADIUS_METERS = 100;
 
 function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
-  const R = 6371000; // Radius of Earth in meters
+  const R = 6371000;
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
   const a =
@@ -18,7 +18,7 @@ function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
       Math.cos(lat2 * (Math.PI / 180)) *
       Math.sin(dLon / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c; // Distance in meters
+  return R * c;
 }
 
 // Function to mark attendance
@@ -27,13 +27,11 @@ exports.markAttendance = async (req, res) => {
   const currentTime = new Date();
 
   try {
-    // Verify if the student exists
     const student = await Student.findById(studentId);
     if (!student) {
       return res.status(404).json({ message: 'Student not found' });
     }
 
-    // Check if the student is enrolled in the class
     const enrolledClassId = student.enrolledClasses.find((cls) =>
       cls.equals(classId)
     );
@@ -46,10 +44,6 @@ exports.markAttendance = async (req, res) => {
     const enrolledClass = await Class.findById(enrolledClassId);
     if (!enrolledClass) {
       return res.status(404).json({ message: 'Class details not found' });
-    }
-
-    if (!enrolledClass.schedule || !Array.isArray(enrolledClass.schedule)) {
-      return res.status(400).json({ message: 'Class schedule is not defined' });
     }
 
     const dayOfWeek = currentTime.toLocaleString('en-US', { weekday: 'long' });
@@ -67,8 +61,8 @@ exports.markAttendance = async (req, res) => {
     const endTime = new Date(
       `${currentTime.toDateString()} ${classSchedule.endTime}`
     );
-    const gracePeriodStart = new Date(startTime.getTime() - 15 * 60 * 1000); // 15 mins before
-    const gracePeriodEnd = new Date(endTime.getTime() + 15 * 60 * 1000); // 15 mins after
+    const gracePeriodStart = new Date(startTime.getTime() - 15 * 60 * 1000);
+    const gracePeriodEnd = new Date(endTime.getTime() + 15 * 60 * 1000);
 
     if (currentTime < gracePeriodStart || currentTime > gracePeriodEnd) {
       return res.status(400).json({
@@ -104,47 +98,44 @@ exports.markAttendance = async (req, res) => {
       }),
     });
 
-    await attendanceRecord.save(); // Save the attendance record
+    await attendanceRecord.save();
 
     return res.status(200).json({ message: 'Attendance marked successfully' });
   } catch (error) {
     console.error('Error marking attendance:', error);
-    return res.status(500).json({ message: 'Internal server error', error: error.message });
+    return res
+      .status(500)
+      .json({ message: 'Internal server error', error: error.message });
   }
 };
 
-// Function to get attendance records for a specific student
 exports.getAttendanceRecords = async (req, res) => {
   const { studentId } = req.params;
-
   try {
-    const attendanceRecords = await Attendance.find({ studentId })
-      .populate('classId', 'name')
-      .select('classId date location attended time');
-
-    if (!attendanceRecords) {
-      return res.status(404).json({ message: 'Attendance records not found' });
+    const student = await Student.findById(studentId);
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
     }
 
-    return res.status(200).json({ attendance: attendanceRecords });
+    const attendanceRecords = await Attendance.find({
+      studentId: student._id,
+    }).populate('classId');
+
+    return res.status(200).json({ attendanceRecords });
   } catch (error) {
-    console.error('Error retrieving attendance records:', error);
-    return res.status(500).json({ message: 'Internal server error' });
+    console.error('Error fetching attendance records:', error);
+    return res
+      .status(500)
+      .json({ message: 'Internal server error', error: error.message });
   }
 };
 
-// Function to get attendance report
-exports.getAttendanceReport = async (req, res) => {
+exports.getAttendanceReport = async () => {
   try {
-    const attendanceRecords = await Attendance.find()
-      .populate('studentId', 'name')
-      .populate('classId', 'name');
-
-    if (!attendanceRecords || attendanceRecords.length === 0) {
-      return res.status(404).json({ message: 'No attendance records found.' });
-    }
-
-    const reportData = attendanceRecords.map(record => ({
+    const attendanceRecords = await Attendance.find({})
+      .populate('classId')
+      .populate('studentId');
+    const reportData = attendanceRecords.map((record) => ({
       studentName: record.studentId.name,
       className: record.classId.name,
       date: record.date,
@@ -154,13 +145,45 @@ exports.getAttendanceReport = async (req, res) => {
       longitude: record.location.longitude,
     }));
 
-    res.status(200).json(reportData);
+    return reportData; // Return the data for further processing
   } catch (error) {
     console.error('Error fetching attendance report:', error);
-    return res.status(500).json({ message: 'Failed to fetch report', error: error.message });
+    throw new Error('Error fetching attendance report');
   }
 };
 
+exports.calculateAttendancePercentage = async (req, res) => {
+  const { studentId, classId } = req.params;
+  try {
+    const student = await Student.findById(studentId);
+    const enrolledClass = await Class.findById(classId);
+    if (!student || !enrolledClass) {
+      return res.status(404).json({ message: 'Student or Class not found' });
+    }
 
+    const totalClasses = await Attendance.countDocuments({
+      classId: enrolledClass._id,
+    });
+    const attendedClasses = await Attendance.countDocuments({
+      studentId: student._id,
+      classId: enrolledClass._id,
+      attended: true,
+    });
 
+    const attendancePercentage = (
+      (attendedClasses / totalClasses) *
+      100
+    ).toFixed(2);
 
+    return res.status(200).json({
+      studentName: student.name,
+      className: enrolledClass.name,
+      attendancePercentage,
+    });
+  } catch (error) {
+    console.error('Error calculating attendance percentage:', error);
+    return res
+      .status(500)
+      .json({ message: 'Internal server error', error: error.message });
+  }
+};

@@ -6,7 +6,12 @@ const StudentSchema = new mongoose.Schema({
   section: { type: String, required: true },
   year: { type: String, required: true },
   enrolledClasses: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Class' }],
-  enrolledClassAttendance: [{ classId: String, totalAttendance: Number }],
+  enrolledClassAttendance: [
+    {
+      classId: { type: mongoose.Schema.Types.ObjectId, ref: 'Class' },
+      classesAttended: { type: Number, default: 0 }, // Number of times the student attended
+    },
+  ],
   password: { type: String, required: true },
   faceData: { type: String }, // Placeholder for face recognition data
   role: {
